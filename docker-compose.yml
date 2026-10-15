@@ -1,0 +1,103 @@
+# ─────────────────────────────────────────────────────────
+# CloudRAG-Adapt — Docker Compose Configuration
+# For containerized deployment with resource monitoring
+# ─────────────────────────────────────────────────────────
+#
+# Usage:
+#   docker-compose up -d          # Start all services
+#   docker-compose down           # Stop all services
+#   docker-compose logs -f app    # View app logs
+#
+# Services:
+#   app         - CloudRAG-Adapt Python application
+#   ollama      - Ollama LLM server
+#   prometheus  - Metrics collection (scrapes cAdvisor)
+#   cadvisor    - Container resource monitoring
+#   grafana     - Dashboard visualization (optional)
+#
+# NOTE: For M1 MacBook Air, you may want to run Ollama natively
+#       instead of in Docker for better performance. In that case,
+#       comment out the ollama service and use host.docker.internal
+#       as the LLM base URL.
+# ─────────────────────────────────────────────────────────
+
+version: "3.8"
+
+services:
+  # ── CloudRAG-Adapt Application ──
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cloudrag-app
+    volumes:
+      - ./data:/app/data
+      - ./index:/app/index
+      - ./models:/app/models
+      - ./results:/app/results
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      - ollama
+    networks:
+      - cloudrag-net
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4"
+
+  # ── Ollama LLM Server ──
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cloudrag-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - cloudrag-net
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: "4"
+
+  # ── Prometheus (Metrics Collection) ──
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: cloudrag-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - cloudrag-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ── cAdvisor (Container Resource Monitoring) ──
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cloudrag-cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - cloudrag-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+networks:
+  cloudrag-net:
+    driver: bridge
+
+volumes:
+  ollama-data:
